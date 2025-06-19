@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
   AuthError
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
+import { createUserDocument } from '../lib/userService';
+import { useInvitations } from '../hooks/useInvitations';
 import { Calendar, Eye, EyeOff } from 'lucide-react';
 
 interface AuthFormProps {
@@ -18,6 +20,24 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [invitedBy, setInvitedBy] = useState<string | null>(null);
+  const { markAsSignedUp } = useInvitations(null);
+
+  useEffect(() => {
+    // Check for invitation parameters in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const invitedByParam = urlParams.get('invitedBy');
+    const emailParam = urlParams.get('email');
+    
+    if (invitedByParam) {
+      setInvitedBy(invitedByParam);
+      setIsLogin(false); // Switch to signup mode for invited users
+    }
+    
+    if (emailParam) {
+      setEmail(decodeURIComponent(emailParam));
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +48,15 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
       if (isLogin) {
         await signInWithEmailAndPassword(auth, email, password);
       } else {
-        await createUserWithEmailAndPassword(auth, email, password);
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        
+        // Create user document with invitation tracking
+        await createUserDocument(userCredential.user.uid, email, invitedBy || undefined);
+        
+        // Mark invitation as completed if user was invited
+        if (invitedBy) {
+          await markAsSignedUp(email, userCredential.user.uid);
+        }
       }
       onSuccess?.();
     } catch (err) {
@@ -46,8 +74,15 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
           <Calendar className="h-12 w-12 text-blue-600 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-gray-900">Event Scheduler</h1>
           <p className="text-gray-600 mt-2">
-            {isLogin ? 'Sign in to your account' : 'Create your account'}
+            {invitedBy ? 'Complete your invitation' : (isLogin ? 'Sign in to your account' : 'Create your account')}
           </p>
+          {invitedBy && (
+            <div className="mt-3 p-3 bg-blue-50 rounded-lg">
+              <p className="text-sm text-blue-700">
+                🎉 You've been invited to join Event Scheduler!
+              </p>
+            </div>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -63,6 +98,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
               required
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Enter your email"
+              disabled={!!invitedBy} // Disable if email came from invitation
             />
           </div>
 
@@ -110,14 +146,16 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
           </button>
         </form>
 
-        <div className="mt-6 text-center">
-          <button
-            onClick={() => setIsLogin(!isLogin)}
-            className="text-blue-600 hover:text-blue-700 font-medium"
-          >
-            {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
-          </button>
-        </div>
+        {!invitedBy && (
+          <div className="mt-6 text-center">
+            <button
+              onClick={() => setIsLogin(!isLogin)}
+              className="text-blue-600 hover:text-blue-700 font-medium"
+            >
+              {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

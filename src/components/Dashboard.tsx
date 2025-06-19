@@ -89,7 +89,8 @@ export function Dashboard({ user }: DashboardProps) {
   return (
     <div className="min-h-screen bg-gray-50">
       <Header 
-        userEmail={user.email!} 
+        userEmail={user.email!}
+        userId={user.uid}
         onCreateEvent={handleCreateEvent}
         eventCount={events.length}
       />
